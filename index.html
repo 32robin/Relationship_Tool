@@ -3,15 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Vibe Mapper v2.0 - 연구용 시각화 도구</title>
+    <title>관계표 그리기 사이트(충북대 김병수 제작)</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        .mermaid svg { max-width: 100% !important; height: auto !important; cursor: crosshair; }
-        .node rect { fill: #ffffff !important; stroke: #333 !important; stroke-width: 2px !important; }
+        .mermaid svg { max-width: 100% !important; height: auto !important; }
+        /* 학술적 무채색 노드 스타일 */
+        .node rect { fill: #ffffff !important; stroke: #1e293b !important; stroke-width: 2px !important; }
     </style>
 </head>
 <body class="bg-slate-50 text-slate-900 font-sans">
@@ -28,8 +31,9 @@
         });
 
         function App() {
-            const [input, setInput] = useState("정서 신념 -> 정서 조절 (0.52)\n정서 조절 -> 심리적 안녕감 (0.41)\n업무 스트레스 -> 소진 (0.68)\n지원 체계 -> 소진 (-0.35)");
-            const [direction, setDirection] = useState("TD"); // TD or LR
+            // 기본 예시 및 방향 설정 (LR: Left to Right)
+            const [input, setInput] = useState("정서 조절 신념 > 정서 조절 전략 (0.52)\n정서 조절 전략 > 심리적 건강 (0.41)\n업무 스트레스 > 소진 (0.68)\n사회적 지지 - 안녕감\n지원 체계 - 소진 (-0.35)");
+            const [direction, setDirection] = useState("LR"); 
             const chartRef = useRef(null);
 
             useEffect(() => {
@@ -40,14 +44,16 @@
                     let syntax = `graph ${direction}\n`;
                     
                     lines.forEach(line => {
-                        // 정규식: "원인 -> 결과 (값)" 패턴 분석
-                        const match = line.match(/(.+?)\s*(?:->|=>)\s*(.+?)(?:\s*\((.+?)\))?$/);
+                        const match = line.match(/(.+?)\s*([>-])\s*(.+?)(?:\s*\((.+?)\))?$/);
                         if (match) {
-                            const [_, from, to, value] = match;
+                            const [_, from, type, to, value] = match;
                             const fromId = from.trim().replace(/\s+/g, '_');
                             const toId = to.trim().replace(/\s+/g, '_');
                             const label = value ? `|"${value}"|` : "";
-                            syntax += `  ${fromId}["${from.trim()}"] --${label}--> ${toId}["${to.trim()}"]\n`;
+                            
+                            // > 면 --> (화살표), - 면 --- (실선)
+                            const connector = type === ">" ? "-->" : "---";
+                            syntax += `  ${fromId}["${from.trim()}"] --${label}${connector} ${toId}["${to.trim()}"]\n`;
                         }
                     });
 
@@ -55,67 +61,99 @@
                         chartRef.current.innerHTML = `<div class="mermaid">${syntax}</div>`;
                         try {
                             await mermaid.run({ nodes: [chartRef.current.querySelector('.mermaid')] });
-                        } catch (e) {
-                            console.error("Mermaid 렌더링 오류:", e);
-                        }
+                        } catch (e) { console.error("렌더링 오류:", e); }
                     }
                 };
                 renderChart();
             }, [input, direction]);
 
-            const downloadSVG = () => {
-                const svgElement = chartRef.current.querySelector('svg');
-                if (!svgElement) return;
-                const serializer = new XMLSerializer();
-                const source = '<?xml version="1.0" standalone="no"?>\r\n' + serializer.serializeToString(svgElement);
-                const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(source);
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = `vibe_mapper_export_${new Date().getTime()}.svg`;
+            // JPG 다운로드
+            const downloadJPG = async () => {
+                const element = chartRef.current;
+                const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2 });
+                const link = document.createElement('a');
+                link.download = `vibe_mapper_${new Date().getTime()}.jpg`;
+                link.href = canvas.toDataURL('image/jpeg', 0.9);
                 link.click();
+            };
+
+            // PDF 다운로드
+            const downloadPDF = async () => {
+                const { jsPDF } = window.jspdf;
+                const element = chartRef.current;
+                const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2 });
+                const imgData = canvas.toDataURL('image/png');
+                
+                const pdf = new jsPDF(direction === "LR" ? 'l' : 'p', 'mm', 'a4');
+                const imgProps = pdf.getImageProperties(imgData);
+                const pdfWidth = pdf.internal.pageSize.getWidth();
+                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+                
+                pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfHeight);
+                pdf.save(`vibe_mapper_${new Date().getTime()}.pdf`);
             };
 
             return (
                 <div class="min-h-screen flex flex-col p-6 max-w-7xl mx-auto">
                     <header class="flex justify-between items-end mb-8 border-b pb-6">
                         <div>
-                            <h1 class="text-4xl font-black text-slate-800 tracking-tight">Vibe Mapper <span class="text-blue-600 text-2xl">v2.0</span></h1>
-                            <p class="text-slate-500 mt-1 font-medium">심리학 연구자를 위한 지능형 인과관계 시각화 엔진</p>
+                            <h1 class="text-4xl font-black text-slate-800 tracking-tight">관계표 그리기 사이트</h1>
+                            <p class="text-blue-600 mt-1 font-semibold text-lg">(충북대 심리학과 김병수 박사과정 제작)</p>
                         </div>
                         <div class="flex gap-2">
-                            <button onClick={() => setDirection(direction === "TD" ? "LR" : "TD")} class="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-md font-semibold transition-all">
-                                방향 전환 ({direction})
+                            <button onClick={downloadJPG} class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold shadow-sm transition-all text-sm">
+                                JPG 다운로드
                             </button>
-                            <button onClick={downloadSVG} class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold shadow-md transition-all">
-                                SVG 다운로드
+                            <button onClick={downloadPDF} class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-md font-semibold shadow-sm transition-all text-sm">
+                                PDF 다운로드
                             </button>
                         </div>
                     </header>
 
-                    <div class="flex flex-1 gap-8 overflow-hidden">
+                    <section class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm mb-8 flex gap-8 items-center">
+                        <div class="flex-none">
+                            <h2 class="text-xl font-bold text-slate-700">범례 (Legend)</h2>
+                            <p class="text-sm text-slate-500 mt-1">입력 규칙에 따른 도표 생성 방식</p>
+                        </div>
+                        <div class="flex-1 flex gap-6 border-l pl-8">
+                            {/* Item 1: 인과 */}
+                            <div class="flex items-center gap-4 p-4 border rounded-lg bg-slate-50 flex-1">
+                                <span class="text-3xl font-black font-mono text-blue-600">{`>`}</span>
+                                <div>
+                                    <div class="font-semibold text-slate-800">"변인 1 {`>`} 변인 2" 입력 시</div>
+                                    <div class="text-sm text-slate-600 flex items-center gap-2">화살표(인과 관계) 생성 <span class="text-lg">→</span></div>
+                                </div>
+                            </div>
+                            {/* Item 2: 상관 */}
+                            <div class="flex items-center gap-4 p-4 border rounded-lg bg-slate-50 flex-1">
+                                <span class="text-3xl font-black font-mono text-slate-600">{`-`}</span>
+                                <div>
+                                    <div class="font-semibold text-slate-800">"변인 1 - 변인 2" 입력 시</div>
+                                    <div class="text-sm text-slate-600 flex items-center gap-2">실선(상관 관계) 생성 <span class="text-lg">—</span></div>
+                                </div>
+                            </div>
+                        </div>
+                    </section>
+
+                    <div class="flex flex-1 gap-8 overflow-hidden" style={{ minHeight: '600px' }}>
                         <div class="w-1/3 flex flex-col gap-4">
                             <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                                <h3 class="font-bold mb-2 text-slate-700">입력 가이드</h3>
-                                <ul class="text-sm text-slate-500 list-disc ml-4 space-y-1">
-                                    <li><code>원인 -> 결과</code> 형식으로 입력</li>
-                                    <li>괄호를 써서 수치 표시: <code>A -> B (0.75)</code></li>
-                                    <li>엔터로 줄을 바꿔 여러 관계 설정</li>
-                                </ul>
+                                <h3 class="font-bold mb-2 text-slate-700 text-sm">데이터 입력 행렬</h3>
+                                <p class="text-xs text-slate-500 list-disc ml-1">괄호를 써서 수치(예: 상관계수)를 표시하세요: <code>A > B (0.50)</code></p>
                             </div>
                             <textarea 
-                                class="flex-1 p-6 border-2 border-slate-200 rounded-xl shadow-inner focus:border-blue-500 outline-none font-mono text-lg transition-colors bg-white"
+                                class="flex-1 p-6 border-2 border-slate-200 rounded-xl shadow-inner focus:border-blue-500 outline-none font-mono text-lg transition-colors bg-white leading-relaxed"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                placeholder="데이터를 입력하세요..."
                             />
                         </div>
-                        <div class="w-2/3 bg-white border-2 border-slate-100 rounded-2xl shadow-sm p-8 overflow-auto flex flex-col relative">
+                        <div class="w-2/3 bg-white border-2 border-slate-100 rounded-2xl shadow-sm p-8 overflow-auto flex flex-col relative" id="capture-area">
                             <div class="absolute top-4 right-4 text-[10px] text-slate-300 font-bold uppercase tracking-widest">Preview Canvas</div>
-                            <div ref={chartRef} class="w-full h-full flex justify-center items-center"></div>
+                            <div ref={chartRef} class="w-full h-full flex justify-center items-center p-4"></div>
                         </div>
                     </div>
-                    <footer class="mt-6 text-center text-slate-400 text-sm">
-                        © 2026 Powered by Gemini & Mermaid.js | Designed for Academic Excellence
+                    <footer class="mt-6 text-center text-slate-400 text-xs">
+                        © 2026 Developed by Kim Byung-soo, Chungbuk National Univ. | Optimized for Academic Publications
                     </footer>
                 </div>
             );
