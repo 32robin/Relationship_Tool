@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>심리 연구 관계 시각화 도구</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .mermaid svg { max-width: 100% !important; height: auto !important; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Mermaid 초기화
+        mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' });
+
+        function App() {
+            const [input, setInput] = useState("업무과중 -> 소진\n예산 부족 -> 인력 부족\n부족한 월급 -> 소진\n인력 부족 -> 업무과중");
+            const chartRef = useRef(null);
+
+            useEffect(() => {
+                const renderChart = async () => {
+                    if (!input.trim()) return;
+                    
+                    const lines = input.split('\n').filter(l => l.trim());
+                    let syntax = "graph TD\n";
+                    lines.forEach(line => {
+                        const parts = line.split(/->|=>|,/).map(p => p.trim());
+                        if (parts.length >= 2) {
+                            syntax += `  node_${parts[0].replace(/\s+/g, '_')}["${parts[0]}"] --> node_${parts[1].replace(/\s+/g, '_')}["${parts[1]}"]\n`;
+                        }
+                    });
+
+                    if (chartRef.current) {
+                        chartRef.current.innerHTML = `<div class="mermaid">${syntax}</div>`;
+                        await mermaid.run({ nodes: [chartRef.current.querySelector('.mermaid')] });
+                    }
+                };
+                renderChart();
+            }, [input]);
+
+            return (
+                <div class="min-h-screen flex flex-col p-8">
+                    <header class="mb-8 border-b pb-4">
+                        <h1 class="text-3xl font-bold text-blue-800">Vibe Mapper v1.0</h1>
+                        <p class="text-gray-600 mt-2">김병수 박사과정 연구용 관계 시각화 도구</p>
+                    </header>
+
+                    <div class="flex flex-1 gap-8 overflow-hidden">
+                        <div class="flex-1 flex flex-col">
+                            <label class="font-semibold mb-2">관계 행렬 입력 (예: 요인1 -> 요인2)</label>
+                            <textarea 
+                                class="flex-1 p-4 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono text-lg"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                            />
+                        </div>
+                        <div class="flex-[1.5] bg-white border rounded-lg shadow-sm p-6 overflow-auto flex flex-col items-center">
+                            <h2 class="font-semibold mb-4 self-start">생성된 관계 도표</h2>
+                            <div ref={chartRef} class="w-full h-full flex justify-center items-center"></div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
