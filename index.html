@@ -12,12 +12,12 @@
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        .mermaid svg { max-width: 100% !important; height: auto !important; }
-        /* 학술적 무채색 노드 스타일 */
+        /* 1. 결과 그림 크기 확대: SVG 자체 스타일 조정 */
+        .mermaid svg { max-width: 100% !important; height: auto !important; width: 100% !important; object-fit: contain;}
         .node rect { fill: #ffffff !important; stroke: #1e293b !important; stroke-width: 2px !important; }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 font-sans">
+<body class="bg-slate-100 text-slate-900 font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
@@ -27,19 +27,20 @@
             startOnLoad: false, 
             theme: 'neutral', 
             securityLevel: 'loose',
-            flowchart: { curve: 'basis', htmlLabels: true } 
+            flowchart: { curve: 'basis', htmlLabels: true, useMaxWidth: false } // useMaxWidth: false 추가
         });
 
         function App() {
-            // 기본 예시 및 방향 설정 (LR: Left to Right)
-            const [input, setInput] = useState("정서 조절 신념 > 정서 조절 전략 (0.52)\n정서 조절 전략 > 심리적 건강 (0.41)\n업무 스트레스 > 소진 (0.68)\n사회적 지지 - 안녕감\n지원 체계 - 소진 (-0.35)");
+            const [input, setInput] = useState("정서 조절 신념 > 전략 사용 (0.52)\n전략 사용 > 심리적 안녕감 (0.41)\n업무 스트레스 > 소진 (0.68)\n지원 체계 - 소진 (-0.35)\n환경 요인 - 전략 사용");
             const [direction, setDirection] = useState("LR"); 
             const chartRef = useRef(null);
+            const [error, setError] = useState(null); // 에러 상태 추가
 
             useEffect(() => {
                 const renderChart = async () => {
-                    if (!input.trim()) return;
-                    
+                    if (!input.trim()) { setError(null); return; }
+                    setError(null); // 에러 초기화
+
                     const lines = input.split('\n').filter(l => l.trim());
                     let syntax = `graph ${direction}\n`;
                     
@@ -49,111 +50,106 @@
                             const [_, from, type, to, value] = match;
                             const fromId = from.trim().replace(/\s+/g, '_');
                             const toId = to.trim().replace(/\s+/g, '_');
-                            const label = value ? `|"${value}"|` : "";
-                            
-                            // > 면 --> (화살표), - 면 --- (실선)
+                            // [버그 수정] 상관계수 수치 앞뒤 공백 제거
+                            const label = value ? `|"${value.trim()}"|` : ""; 
                             const connector = type === ">" ? "-->" : "---";
                             syntax += `  ${fromId}["${from.trim()}"] --${label}${connector} ${toId}["${to.trim()}"]\n`;
                         }
                     });
 
                     if (chartRef.current) {
-                        chartRef.current.innerHTML = `<div class="mermaid">${syntax}</div>`;
                         try {
+                            // 기존 내용 삭제 및 새 내용 입력
+                            chartRef.current.innerHTML = `<div class="mermaid">${syntax}</div>`;
                             await mermaid.run({ nodes: [chartRef.current.querySelector('.mermaid')] });
-                        } catch (e) { console.error("렌더링 오류:", e); }
+                            
+                            // 렌더링 후 SVG 크기 강제 조정 (확대)
+                            const svg = chartRef.current.querySelector('svg');
+                            if(svg) {
+                                svg.style.width = '100%';
+                                svg.style.height = '100%';
+                            }
+                        } catch (e) { 
+                            setError("입력 문법이 올바르지 않습니다. 범례를 확인해주세요.");
+                            chartRef.current.innerHTML = ""; // 오류 발생 시 캔버스 비움
+                            console.error(e); 
+                        }
                     }
                 };
                 renderChart();
             }, [input, direction]);
 
-            // JPG 다운로드
             const downloadJPG = async () => {
-                const element = chartRef.current;
-                const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2 });
+                const canvas = await html2canvas(chartRef.current, { backgroundColor: '#ffffff', scale: 2 });
                 const link = document.createElement('a');
-                link.download = `vibe_mapper_${new Date().getTime()}.jpg`;
+                link.download = `relationship_map_${new Date().getTime()}.jpg`;
                 link.href = canvas.toDataURL('image/jpeg', 0.9);
                 link.click();
             };
 
-            // PDF 다운로드
             const downloadPDF = async () => {
                 const { jsPDF } = window.jspdf;
-                const element = chartRef.current;
-                const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2 });
+                const canvas = await html2canvas(chartRef.current, { backgroundColor: '#ffffff', scale: 2 });
                 const imgData = canvas.toDataURL('image/png');
-                
                 const pdf = new jsPDF(direction === "LR" ? 'l' : 'p', 'mm', 'a4');
-                const imgProps = pdf.getImageProperties(imgData);
                 const pdfWidth = pdf.internal.pageSize.getWidth();
-                const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-                
+                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
                 pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfHeight);
-                pdf.save(`vibe_mapper_${new Date().getTime()}.pdf`);
+                pdf.save(`relationship_map_${new Date().getTime()}.pdf`);
             };
 
             return (
-                <div class="min-h-screen flex flex-col p-6 max-w-7xl mx-auto">
-                    <header class="flex justify-between items-end mb-8 border-b pb-6">
+                <div class="min-h-screen flex flex-col p-6 max-w-screen-2xl mx-auto">
+                    <header class="flex justify-between items-end mb-8 border-b-2 pb-6 border-slate-200">
                         <div>
-                            <h1 class="text-4xl font-black text-slate-800 tracking-tight">관계표 그리기 사이트</h1>
-                            <p class="text-blue-600 mt-1 font-semibold text-lg">(충북대 심리학과 김병수 박사과정 제작)</p>
+                            <h1 class="text-4xl font-black text-slate-800 tracking-tight text-blue-700">관계표 그리기 사이트</h1>
+                            <p class="text-slate-600 mt-1 font-semibold text-xl">(충북대 김병수 제작)</p>
                         </div>
-                        <div class="flex gap-2">
-                            <button onClick={downloadJPG} class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-md font-semibold shadow-sm transition-all text-sm">
-                                JPG 다운로드
-                            </button>
-                            <button onClick={downloadPDF} class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-md font-semibold shadow-sm transition-all text-sm">
-                                PDF 다운로드
-                            </button>
+                        <div class="flex gap-3">
+                            <button onClick={downloadJPG} class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-sm transition-all text-sm">JPG 다운로드</button>
+                            <button onClick={downloadPDF} class="px-6 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold shadow-sm transition-all text-sm">PDF 다운로드</button>
                         </div>
                     </header>
 
-                    <section class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm mb-8 flex gap-8 items-center">
-                        <div class="flex-none">
-                            <h2 class="text-xl font-bold text-slate-700">범례 (Legend)</h2>
-                            <p class="text-sm text-slate-500 mt-1">입력 규칙에 따른 도표 생성 방식</p>
+                    <section class="bg-white border-2 border-slate-200 rounded-2xl p-6 shadow-sm mb-8 flex gap-8 items-center">
+                        <div class="flex-none border-r pr-8">
+                            <h2 class="text-xl font-bold text-slate-800 tracking-tight">범례 (Legend)</h2>
                         </div>
-                        <div class="flex-1 flex gap-6 border-l pl-8">
-                            {/* Item 1: 인과 */}
-                            <div class="flex items-center gap-4 p-4 border rounded-lg bg-slate-50 flex-1">
-                                <span class="text-3xl font-black font-mono text-blue-600">{`>`}</span>
-                                <div>
-                                    <div class="font-semibold text-slate-800">"변인 1 {`>`} 변인 2" 입력 시</div>
-                                    <div class="text-sm text-slate-600 flex items-center gap-2">화살표(인과 관계) 생성 <span class="text-lg">→</span></div>
-                                </div>
+                        <div class="flex-1 flex gap-4">
+                            <div class="flex items-center gap-4 px-6 py-4 border rounded-xl bg-blue-50 flex-1">
+                                <span class="text-3xl font-black text-blue-600 font-mono">{`>`}</span>
+                                <span class="font-bold text-slate-700">"변인 1 > 변인 2" 표시: 화살표(인과) 생성</span>
                             </div>
-                            {/* Item 2: 상관 */}
-                            <div class="flex items-center gap-4 p-4 border rounded-lg bg-slate-50 flex-1">
-                                <span class="text-3xl font-black font-mono text-slate-600">{`-`}</span>
-                                <div>
-                                    <div class="font-semibold text-slate-800">"변인 1 - 변인 2" 입력 시</div>
-                                    <div class="text-sm text-slate-600 flex items-center gap-2">실선(상관 관계) 생성 <span class="text-lg">—</span></div>
-                                </div>
+                            <div class="flex items-center gap-4 px-6 py-4 border rounded-xl bg-slate-50 flex-1">
+                                <span class="text-3xl font-black text-slate-500 font-mono">{`-`}</span>
+                                <span class="font-bold text-slate-700">"변인 1 - 변인 2" 표시: 실선(상관) 생성</span>
                             </div>
                         </div>
                     </section>
 
-                    <div class="flex flex-1 gap-8 overflow-hidden" style={{ minHeight: '600px' }}>
+                    <div class="flex flex-1 gap-8" style={{ minHeight: '600px' }}>
                         <div class="w-1/3 flex flex-col gap-4">
-                            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                                <h3 class="font-bold mb-2 text-slate-700 text-sm">데이터 입력 행렬</h3>
-                                <p class="text-xs text-slate-500 list-disc ml-1">괄호를 써서 수치(예: 상관계수)를 표시하세요: <code>A > B (0.50)</code></p>
+                            <div class="bg-slate-800 text-white p-5 rounded-xl shadow-lg relative">
+                                {/* 3. 데이터 입력 행렬 -> 입력페이지 수정 */}
+                                <h3 class="font-bold text-base mb-1 text-blue-300 underline">입력페이지</h3>
+                                <p class="text-xs text-slate-300 opacity-80">수치는 괄호안에 입력하세요. (예: 0.50)</p>
+                                {error && <div class="absolute top-2 right-2 text-red-400 font-bold text-xs p-1 bg-red-100/10 rounded">{error}</div>}
                             </div>
                             <textarea 
-                                class="flex-1 p-6 border-2 border-slate-200 rounded-xl shadow-inner focus:border-blue-500 outline-none font-mono text-lg transition-colors bg-white leading-relaxed"
+                                class="flex-1 p-6 border-2 border-slate-300 rounded-2xl shadow-inner focus:border-blue-500 outline-none font-mono text-xl transition-all bg-white"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                             />
                         </div>
-                        <div class="w-2/3 bg-white border-2 border-slate-100 rounded-2xl shadow-sm p-8 overflow-auto flex flex-col relative" id="capture-area">
-                            <div class="absolute top-4 right-4 text-[10px] text-slate-300 font-bold uppercase tracking-widest">Preview Canvas</div>
-                            <div ref={chartRef} class="w-full h-full flex justify-center items-center p-4"></div>
+                        {/* 1. 결과페이지 스크린 크기 확대 */}
+                        <div class="w-2/3 bg-white border-2 border-slate-200 rounded-3xl shadow-md p-2 overflow-auto flex items-center justify-center relative bg-white" >
+                            {/* 2. Preview Canvas -> 결과페이지 수정 */}
+                            <div class="absolute top-4 right-4 text-[11px] text-slate-300 font-bold uppercase tracking-widest bg-white px-1">결과페이지</div>
+                            <div ref={chartRef} class="w-full h-full flex justify-center items-center overflow-hidden"></div>
                         </div>
                     </div>
-                    <footer class="mt-6 text-center text-slate-400 text-xs">
-                        © 2026 Developed by Kim Byung-soo, Chungbuk National Univ. | Optimized for Academic Publications
+                    <footer class="mt-8 text-center text-slate-400 text-sm font-medium border-t pt-4">
+                        © 2026 Developed by Kim Byung-soo (Chungbuk Univ). All Rights Reserved. Optimized for Publishing.
                     </footer>
                 </div>
             );
