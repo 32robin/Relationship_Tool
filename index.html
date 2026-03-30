@@ -7,150 +7,156 @@
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@reactflow/core@11.10.1/dist/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@reactflow/core@11.10.1/dist/prod/index.js"></script>
     <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <style>
-        /* 1. 결과 그림 크기 확대: SVG 자체 스타일 조정 */
-        .mermaid svg { max-width: 100% !important; height: auto !important; width: 100% !important; object-fit: contain;}
-        .node rect { fill: #ffffff !important; stroke: #1e293b !important; stroke-width: 2px !important; }
+        .react-flow__node { background: #fff; border: 2px solid #1e293b; border-radius: 8px; padding: 10px 20px; font-weight: bold; text-align: center; font-size: 16px; min-width: 100px; }
+        .react-flow__edge-path { stroke: #1e293b; stroke-width: 2.5; }
+        .react-flow__arrowhead path { fill: #1e293b; }
     </style>
 </head>
 <body class="bg-slate-100 text-slate-900 font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-
-        mermaid.initialize({ 
-            startOnLoad: false, 
-            theme: 'neutral', 
-            securityLevel: 'loose',
-            flowchart: { curve: 'basis', htmlLabels: true, useMaxWidth: false } // useMaxWidth: false 추가
-        });
+        const { useState, useEffect, useCallback } = React;
+        const { ReactFlow, useNodesState, useEdgesState, addEdge, MarkerType, Background, Controls } = window.ReactFlow;
 
         function App() {
-            const [input, setInput] = useState("정서 조절 신념 > 전략 사용 (0.52)\n전략 사용 > 심리적 안녕감 (0.41)\n업무 스트레스 > 소진 (0.68)\n지원 체계 - 소진 (-0.35)\n환경 요인 - 전략 사용");
-            const [direction, setDirection] = useState("LR"); 
-            const chartRef = useRef(null);
-            const [error, setError] = useState(null); // 에러 상태 추가
+            const [input, setInput] = useState("독립변인 > 매개변인\n매개변인 > 종속변인\n독립변인 > 종속변인\n외생변인 - 매개변인");
+            const [nodes, setNodes, onNodesChange] = useNodesState([]);
+            const [edges, setEdges, onEdgesChange] = useEdgesState([]);
 
+            // 텍스트 분석 및 노드/엣지 생성
             useEffect(() => {
-                const renderChart = async () => {
-                    if (!input.trim()) { setError(null); return; }
-                    setError(null); // 에러 초기화
+                const lines = input.split('\n').filter(l => l.trim());
+                const newNodes = [];
+                const newEdges = [];
+                const nodeSet = new Set();
 
-                    const lines = input.split('\n').filter(l => l.trim());
-                    let syntax = `graph ${direction}\n`;
-                    
-                    lines.forEach(line => {
-                        const match = line.match(/(.+?)\s*([>-])\s*(.+?)(?:\s*\((.+?)\))?$/);
-                        if (match) {
-                            const [_, from, type, to, value] = match;
-                            const fromId = from.trim().replace(/\s+/g, '_');
-                            const toId = to.trim().replace(/\s+/g, '_');
-                            // [버그 수정] 상관계수 수치 앞뒤 공백 제거
-                            const label = value ? `|"${value.trim()}"|` : ""; 
-                            const connector = type === ">" ? "-->" : "---";
-                            syntax += `  ${fromId}["${from.trim()}"] --${label}${connector} ${toId}["${to.trim()}"]\n`;
-                        }
-                    });
+                lines.forEach((line, index) => {
+                    // 숫자 무시하고 기호(> 또는 -)로만 분리
+                    const match = line.match(/(.+?)\s*([>-])\s*(.+?)$/);
+                    if (match) {
+                        const [_, from, type, to] = match;
+                        const fromName = from.trim().split('(')[0].trim();
+                        const toName = to.trim().split('(')[0].trim();
 
-                    if (chartRef.current) {
-                        try {
-                            // 기존 내용 삭제 및 새 내용 입력
-                            chartRef.current.innerHTML = `<div class="mermaid">${syntax}</div>`;
-                            await mermaid.run({ nodes: [chartRef.current.querySelector('.mermaid')] });
-                            
-                            // 렌더링 후 SVG 크기 강제 조정 (확대)
-                            const svg = chartRef.current.querySelector('svg');
-                            if(svg) {
-                                svg.style.width = '100%';
-                                svg.style.height = '100%';
-                            }
-                        } catch (e) { 
-                            setError("입력 문법이 올바르지 않습니다. 범례를 확인해주세요.");
-                            chartRef.current.innerHTML = ""; // 오류 발생 시 캔버스 비움
-                            console.error(e); 
+                        if (!nodeSet.has(fromName)) {
+                            nodeSet.add(fromName);
+                            newNodes.push({
+                                id: fromName,
+                                data: { label: fromName },
+                                position: { x: Math.random() * 400, y: Math.random() * 400 }, // 초기 랜덤 배치
+                            });
                         }
+                        if (!nodeSet.has(toName)) {
+                            nodeSet.add(toName);
+                            newNodes.push({
+                                id: toName,
+                                data: { label: toName },
+                                position: { x: Math.random() * 400, y: Math.random() * 400 },
+                            });
+                        }
+
+                        newEdges.push({
+                            id: `e-${fromName}-${toName}`,
+                            source: fromName,
+                            target: toName,
+                            markerEnd: type === ">" ? { type: MarkerType.ArrowClosed, color: '#1e293b' } : null,
+                            style: { stroke: '#1e293b' },
+                        });
                     }
-                };
-                renderChart();
-            }, [input, direction]);
+                });
+                
+                // 기존 위치를 유지하면서 새로운 노드 반영 (완전 초기화 방지)
+                setNodes((nds) => {
+                    return newNodes.map(nn => {
+                        const existing = nds.find(n => n.id === nn.id);
+                        return existing ? { ...nn, position: existing.position } : nn;
+                    });
+                });
+                setEdges(newEdges);
+            }, [input]);
 
             const downloadJPG = async () => {
-                const canvas = await html2canvas(chartRef.current, { backgroundColor: '#ffffff', scale: 2 });
+                const element = document.querySelector('.react-flow__viewport');
+                const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2 });
                 const link = document.createElement('a');
-                link.download = `relationship_map_${new Date().getTime()}.jpg`;
+                link.download = `research_model_${new Date().getTime()}.jpg`;
                 link.href = canvas.toDataURL('image/jpeg', 0.9);
                 link.click();
             };
 
             const downloadPDF = async () => {
                 const { jsPDF } = window.jspdf;
-                const canvas = await html2canvas(chartRef.current, { backgroundColor: '#ffffff', scale: 2 });
+                const element = document.querySelector('.react-flow__viewport');
+                const canvas = await html2canvas(element, { backgroundColor: '#ffffff', scale: 2 });
                 const imgData = canvas.toDataURL('image/png');
-                const pdf = new jsPDF(direction === "LR" ? 'l' : 'p', 'mm', 'a4');
-                const pdfWidth = pdf.internal.pageSize.getWidth();
-                const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-                pdf.addImage(imgData, 'PNG', 0, 10, pdfWidth, pdfHeight);
-                pdf.save(`relationship_map_${new Date().getTime()}.pdf`);
+                const pdf = new jsPDF('l', 'mm', 'a4');
+                pdf.addImage(imgData, 'PNG', 10, 10, 270, 180);
+                pdf.save(`research_model_${new Date().getTime()}.pdf`);
             };
 
             return (
-                <div class="min-h-screen flex flex-col p-6 max-w-screen-2xl mx-auto">
-                    <header class="flex justify-between items-end mb-8 border-b-2 pb-6 border-slate-200">
+                <div class="h-screen flex flex-col p-6 max-w-screen-2xl mx-auto">
+                    <header class="flex justify-between items-end mb-6 border-b-2 pb-4 border-slate-200">
                         <div>
-                            <h1 class="text-4xl font-black text-slate-800 tracking-tight text-blue-700">관계표 그리기 사이트</h1>
-                            <p class="text-slate-600 mt-1 font-semibold text-xl">(충북대 김병수 제작)</p>
+                            <h1 class="text-3xl font-black text-blue-700">관계표 그리기 사이트</h1>
+                            <p class="text-slate-600 font-semibold">(충북대 김병수 제작)</p>
                         </div>
-                        <div class="flex gap-3">
-                            <button onClick={downloadJPG} class="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-bold shadow-sm transition-all text-sm">JPG 다운로드</button>
-                            <button onClick={downloadPDF} class="px-6 py-3 bg-rose-600 hover:bg-rose-700 text-white rounded-lg font-bold shadow-sm transition-all text-sm">PDF 다운로드</button>
+                        <div class="flex gap-2">
+                            <button onClick={downloadJPG} class="px-5 py-2 bg-emerald-600 text-white rounded-lg font-bold text-sm">JPG 저장</button>
+                            <button onClick={downloadPDF} class="px-5 py-2 bg-rose-600 text-white rounded-lg font-bold text-sm">PDF 저장</button>
                         </div>
                     </header>
 
-                    <section class="bg-white border-2 border-slate-200 rounded-2xl p-6 shadow-sm mb-8 flex gap-8 items-center">
-                        <div class="flex-none border-r pr-8">
-                            <h2 class="text-xl font-bold text-slate-800 tracking-tight">범례 (Legend)</h2>
-                        </div>
-                        <div class="flex-1 flex gap-4">
-                            <div class="flex items-center gap-4 px-6 py-4 border rounded-xl bg-blue-50 flex-1">
-                                <span class="text-3xl font-black text-blue-600 font-mono">{`>`}</span>
-                                <span class="font-bold text-slate-700">"변인 1 > 변인 2" 표시: 화살표(인과) 생성</span>
+                    <section class="bg-white border rounded-xl p-4 shadow-sm mb-6 flex gap-6 items-center">
+                        <h2 class="font-bold text-slate-800 border-r pr-4 italic">범례 (Legend)</h2>
+                        <div class="flex gap-4 text-sm font-medium">
+                            <div class="px-4 py-2 bg-blue-50 border border-blue-100 rounded-lg">
+                                <span class="text-blue-600 font-black"> {`>`} </span> 화살표(인과)
                             </div>
-                            <div class="flex items-center gap-4 px-6 py-4 border rounded-xl bg-slate-50 flex-1">
-                                <span class="text-3xl font-black text-slate-500 font-mono">{`-`}</span>
-                                <span class="font-bold text-slate-700">"변인 1 - 변인 2" 표시: 실선(상관) 생성</span>
+                            <div class="px-4 py-2 bg-slate-50 border border-slate-200 rounded-lg">
+                                <span class="text-slate-500 font-black"> - </span> 실선(상관)
+                            </div>
+                            <div class="px-4 py-2 text-slate-400 italic font-normal text-xs">
+                                * 결과페이지의 도형을 마우스로 드래그하여 모델을 직접 디자인하세요.
                             </div>
                         </div>
                     </section>
 
-                    <div class="flex flex-1 gap-8" style={{ minHeight: '600px' }}>
-                        <div class="w-1/3 flex flex-col gap-4">
-                            <div class="bg-slate-800 text-white p-5 rounded-xl shadow-lg relative">
-                                {/* 3. 데이터 입력 행렬 -> 입력페이지 수정 */}
-                                <h3 class="font-bold text-base mb-1 text-blue-300 underline">입력페이지</h3>
-                                <p class="text-xs text-slate-300 opacity-80">수치는 괄호안에 입력하세요. (예: 0.50)</p>
-                                {error && <div class="absolute top-2 right-2 text-red-400 font-bold text-xs p-1 bg-red-100/10 rounded">{error}</div>}
+                    <div class="flex flex-1 gap-6 overflow-hidden">
+                        <div class="w-1/4 flex flex-col gap-4">
+                            <div class="bg-slate-800 text-white p-4 rounded-xl shadow-md">
+                                <h3 class="font-bold text-blue-300 underline">입력페이지</h3>
+                                <p class="text-[10px] text-slate-400 mt-1 uppercase tracking-tighter">Enter variables & relations</p>
                             </div>
                             <textarea 
-                                class="flex-1 p-6 border-2 border-slate-300 rounded-2xl shadow-inner focus:border-blue-500 outline-none font-mono text-xl transition-all bg-white"
+                                class="flex-1 p-5 border-2 border-slate-300 rounded-2xl shadow-inner focus:border-blue-500 outline-none font-mono text-lg transition-all bg-white"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                             />
                         </div>
-                        {/* 1. 결과페이지 스크린 크기 확대 */}
-                        <div class="w-2/3 bg-white border-2 border-slate-200 rounded-3xl shadow-md p-2 overflow-auto flex items-center justify-center relative bg-white" >
-                            {/* 2. Preview Canvas -> 결과페이지 수정 */}
-                            <div class="absolute top-4 right-4 text-[11px] text-slate-300 font-bold uppercase tracking-widest bg-white px-1">결과페이지</div>
-                            <div ref={chartRef} class="w-full h-full flex justify-center items-center overflow-hidden"></div>
+                        <div class="w-3/4 bg-white border-2 border-slate-200 rounded-3xl shadow-md relative overflow-hidden">
+                            <div class="absolute top-4 left-4 z-10 text-[11px] text-slate-300 font-bold uppercase tracking-widest bg-white/80 px-2">결과페이지 (Interactive Canvas)</div>
+                            <div style={{ width: '100%', height: '100%' }}>
+                                <ReactFlow
+                                    nodes={nodes}
+                                    edges={edges}
+                                    onNodesChange={onNodesChange}
+                                    onEdgesChange={onEdgesChange}
+                                    fitView
+                                >
+                                    <Background color="#cbd5e1" gap={20} />
+                                    <Controls />
+                                </ReactFlow>
+                            </div>
                         </div>
                     </div>
-                    <footer class="mt-8 text-center text-slate-400 text-sm font-medium border-t pt-4">
-                        © 2026 Developed by Kim Byung-soo (Chungbuk Univ). All Rights Reserved. Optimized for Publishing.
-                    </footer>
                 </div>
             );
         }
