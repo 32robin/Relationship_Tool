@@ -3,27 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>심리 연구 관계 시각화 도구</title>
+    <title>Vibe Mapper v2.0 - 연구용 시각화 도구</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        .mermaid svg { max-width: 100% !important; height: auto !important; }
+        .mermaid svg { max-width: 100% !important; height: auto !important; cursor: crosshair; }
+        .node rect { fill: #ffffff !important; stroke: #333 !important; stroke-width: 2px !important; }
     </style>
 </head>
-<body class="bg-gray-50 text-gray-900">
+<body class="bg-slate-50 text-slate-900 font-sans">
     <div id="root"></div>
 
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
 
-        // Mermaid 초기화
-        mermaid.initialize({ startOnLoad: false, theme: 'neutral', securityLevel: 'loose' });
+        mermaid.initialize({ 
+            startOnLoad: false, 
+            theme: 'neutral', 
+            securityLevel: 'loose',
+            flowchart: { curve: 'basis', htmlLabels: true } 
+        });
 
         function App() {
-            const [input, setInput] = useState("업무과중 -> 소진\n예산 부족 -> 인력 부족\n부족한 월급 -> 소진\n인력 부족 -> 업무과중");
+            const [input, setInput] = useState("정서 신념 -> 정서 조절 (0.52)\n정서 조절 -> 심리적 안녕감 (0.41)\n업무 스트레스 -> 소진 (0.68)\n지원 체계 -> 소진 (-0.35)");
+            const [direction, setDirection] = useState("TD"); // TD or LR
             const chartRef = useRef(null);
 
             useEffect(() => {
@@ -31,43 +37,86 @@
                     if (!input.trim()) return;
                     
                     const lines = input.split('\n').filter(l => l.trim());
-                    let syntax = "graph TD\n";
+                    let syntax = `graph ${direction}\n`;
+                    
                     lines.forEach(line => {
-                        const parts = line.split(/->|=>|,/).map(p => p.trim());
-                        if (parts.length >= 2) {
-                            syntax += `  node_${parts[0].replace(/\s+/g, '_')}["${parts[0]}"] --> node_${parts[1].replace(/\s+/g, '_')}["${parts[1]}"]\n`;
+                        // 정규식: "원인 -> 결과 (값)" 패턴 분석
+                        const match = line.match(/(.+?)\s*(?:->|=>)\s*(.+?)(?:\s*\((.+?)\))?$/);
+                        if (match) {
+                            const [_, from, to, value] = match;
+                            const fromId = from.trim().replace(/\s+/g, '_');
+                            const toId = to.trim().replace(/\s+/g, '_');
+                            const label = value ? `|"${value}"|` : "";
+                            syntax += `  ${fromId}["${from.trim()}"] --${label}--> ${toId}["${to.trim()}"]\n`;
                         }
                     });
 
                     if (chartRef.current) {
                         chartRef.current.innerHTML = `<div class="mermaid">${syntax}</div>`;
-                        await mermaid.run({ nodes: [chartRef.current.querySelector('.mermaid')] });
+                        try {
+                            await mermaid.run({ nodes: [chartRef.current.querySelector('.mermaid')] });
+                        } catch (e) {
+                            console.error("Mermaid 렌더링 오류:", e);
+                        }
                     }
                 };
                 renderChart();
-            }, [input]);
+            }, [input, direction]);
+
+            const downloadSVG = () => {
+                const svgElement = chartRef.current.querySelector('svg');
+                if (!svgElement) return;
+                const serializer = new XMLSerializer();
+                const source = '<?xml version="1.0" standalone="no"?>\r\n' + serializer.serializeToString(svgElement);
+                const url = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(source);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `vibe_mapper_export_${new Date().getTime()}.svg`;
+                link.click();
+            };
 
             return (
-                <div class="min-h-screen flex flex-col p-8">
-                    <header class="mb-8 border-b pb-4">
-                        <h1 class="text-3xl font-bold text-blue-800">Vibe Mapper v1.0</h1>
-                        <p class="text-gray-600 mt-2">김병수 박사과정 연구용 관계 시각화 도구</p>
+                <div class="min-h-screen flex flex-col p-6 max-w-7xl mx-auto">
+                    <header class="flex justify-between items-end mb-8 border-b pb-6">
+                        <div>
+                            <h1 class="text-4xl font-black text-slate-800 tracking-tight">Vibe Mapper <span class="text-blue-600 text-2xl">v2.0</span></h1>
+                            <p class="text-slate-500 mt-1 font-medium">심리학 연구자를 위한 지능형 인과관계 시각화 엔진</p>
+                        </div>
+                        <div class="flex gap-2">
+                            <button onClick={() => setDirection(direction === "TD" ? "LR" : "TD")} class="px-4 py-2 bg-slate-200 hover:bg-slate-300 rounded-md font-semibold transition-all">
+                                방향 전환 ({direction})
+                            </button>
+                            <button onClick={downloadSVG} class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md font-semibold shadow-md transition-all">
+                                SVG 다운로드
+                            </button>
+                        </div>
                     </header>
 
                     <div class="flex flex-1 gap-8 overflow-hidden">
-                        <div class="flex-1 flex flex-col">
-                            <label class="font-semibold mb-2">관계 행렬 입력 (예: 요인1 -> 요인2)</label>
+                        <div class="w-1/3 flex flex-col gap-4">
+                            <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                                <h3 class="font-bold mb-2 text-slate-700">입력 가이드</h3>
+                                <ul class="text-sm text-slate-500 list-disc ml-4 space-y-1">
+                                    <li><code>원인 -> 결과</code> 형식으로 입력</li>
+                                    <li>괄호를 써서 수치 표시: <code>A -> B (0.75)</code></li>
+                                    <li>엔터로 줄을 바꿔 여러 관계 설정</li>
+                                </ul>
+                            </div>
                             <textarea 
-                                class="flex-1 p-4 border rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono text-lg"
+                                class="flex-1 p-6 border-2 border-slate-200 rounded-xl shadow-inner focus:border-blue-500 outline-none font-mono text-lg transition-colors bg-white"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
+                                placeholder="데이터를 입력하세요..."
                             />
                         </div>
-                        <div class="flex-[1.5] bg-white border rounded-lg shadow-sm p-6 overflow-auto flex flex-col items-center">
-                            <h2 class="font-semibold mb-4 self-start">생성된 관계 도표</h2>
+                        <div class="w-2/3 bg-white border-2 border-slate-100 rounded-2xl shadow-sm p-8 overflow-auto flex flex-col relative">
+                            <div class="absolute top-4 right-4 text-[10px] text-slate-300 font-bold uppercase tracking-widest">Preview Canvas</div>
                             <div ref={chartRef} class="w-full h-full flex justify-center items-center"></div>
                         </div>
                     </div>
+                    <footer class="mt-6 text-center text-slate-400 text-sm">
+                        © 2026 Powered by Gemini & Mermaid.js | Designed for Academic Excellence
+                    </footer>
                 </div>
             );
         }
